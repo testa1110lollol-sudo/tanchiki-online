@@ -103,6 +103,34 @@
             background: linear-gradient(90deg, #ff4444, #44ff44);
             transition: width 0.3s;
         }
+        #level {
+            position: absolute;
+            bottom: 20px;
+            left: 10px;
+            color: #ffd700;
+            font-size: 16px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            z-index: 10;
+        }
+        #expBarContainer {
+            position: absolute;
+            bottom: 40px;
+            left: 10px;
+            width: 150px;
+            height: 10px;
+            background: #333;
+            border-radius: 5px;
+            overflow: hidden;
+            border: 1px solid #555;
+            z-index: 10;
+        }
+        #expBar {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, #4169e1, #00bfff);
+            transition: width 0.3s;
+        }
         #minimap {
             position: absolute;
             bottom: 10px;
@@ -182,6 +210,8 @@
         <div id="ui">WASD/стрелки - движение, Клик/К - стрельба</div>
         <div id="score">Счёт: 0</div>
         <div id="healthBar"><div id="healthFill"></div></div>
+        <div id="level">Уровень: 1</div>
+        <div id="expBarContainer"><div id="expBar"></div></div>
         <canvas id="minimap"></canvas>
         <div id="mobileControls">
             <div class="joystick-zone" id="joystickLeft">
@@ -251,7 +281,12 @@
             health: 100,
             maxHealth: 100,
             cooldown: 0,
-            color: '#4a7c23'
+            color: '#4a7c23',
+            level: 1,
+            exp: 0,
+            expNeeded: 2,
+            damage: 15,
+            size: 1
         };
         
         let joystickState = {
@@ -349,11 +384,18 @@
             player.x = mapWidth / 2;
             player.y = mapHeight / 2;
             player.health = 100;
+            player.maxHealth = 100;
+            player.level = 1;
+            player.exp = 0;
+            player.expNeeded = 2;
+            player.damage = 15;
+            player.size = 1;
             bullets.length = 0;
             enemies.length = 0;
             particles.length = 0;
             updateScore();
             updateHealth();
+            updateLevel();
             
             if (mode === 'multi') {
                 socket = io({ 
@@ -369,12 +411,22 @@
                     for (const id in data.players) {
                         if (id !== playerId) {
                             otherPlayers[id] = { ...data.players[id], lastX: data.players[id].x, lastY: data.players[id].y };
+                        } else {
+                            player.level = data.players[id].level || 1;
+                            player.exp = data.players[id].exp || 0;
+                            player.expNeeded = data.players[id].expNeeded || 2;
+                            player.maxHealth = data.players[id].maxHealth || 100;
+                            player.damage = data.players[id].damage || 15;
+                            player.health = player.maxHealth;
+                            player.size = 1 + (player.level - 1) * 0.1;
+                            updateLevel();
+                            updateHealth();
                         }
                     }
                 });
                 
                 socket.on('playerJoined', (p) => {
-                    otherPlayers[p.id] = { ...p, lastX: p.x, lastY: p.y };
+                    otherPlayers[p.id] = { ...p, lastX: p.x, lastY: p.y, level: p.level || 1 };
                 });
                 
                 socket.on('playerLeft', (id) => {
@@ -391,6 +443,7 @@
                         otherPlayers[p.id].health = p.health;
                         otherPlayers[p.id].score = p.score;
                         otherPlayers[p.id].color = p.color;
+                        otherPlayers[p.id].level = p.level || 1;
                     }
                 });
                 
@@ -426,10 +479,23 @@
             healthFill.style.width = `${player.health}%`;
         }
         
-        function drawTank(x, y, angle, color, isPlayer = false, health = 100) {
+        function updateLevel() {
+            const levelEl = document.getElementById('level');
+            if (levelEl) {
+                levelEl.textContent = `Уровень: ${player.level}`;
+            }
+            const expEl = document.getElementById('expBar');
+            if (expEl) {
+                expEl.style.width = `${(player.exp / player.expNeeded) * 100}%`;
+            }
+        }
+        
+        function drawTank(x, y, angle, color, isPlayer = false, health = 100, level = 1) {
+            const scale = 1 + (level - 1) * 0.1;
             ctx.save();
             ctx.translate(x, y);
             ctx.rotate(angle);
+            ctx.scale(scale, scale);
             
             ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
             ctx.shadowBlur = 10;
@@ -477,11 +543,12 @@
             
             ctx.restore();
             
+            const healthBarWidth = 50 * scale;
             if (health < 100) {
                 ctx.fillStyle = '#333';
-                ctx.fillRect(x - 25, y - 40, 50, 6);
+                ctx.fillRect(x - healthBarWidth/2, y - 40 * scale, healthBarWidth, 6);
                 ctx.fillStyle = health > 50 ? '#44ff44' : health > 25 ? '#ffff44' : '#ff4444';
-                ctx.fillRect(x - 25, y - 40, 50 * (health / 100), 6);
+                ctx.fillRect(x - healthBarWidth/2, y - 40 * scale, healthBarWidth * (health / 100), 6);
             }
         }
         
@@ -501,11 +568,12 @@
             
             const bulletSpeed = 10;
             const bullet = {
-                x: player.x + Math.cos(player.angle) * 30,
-                y: player.y + Math.sin(player.angle) * 30,
+                x: player.x + Math.cos(player.angle) * 30 * player.size,
+                y: player.y + Math.sin(player.angle) * 30 * player.size,
                 vx: Math.cos(player.angle) * bulletSpeed,
                 vy: Math.sin(player.angle) * bulletSpeed,
-                radius: 6
+                radius: 6 + player.level,
+                damage: player.damage
             };
             
             if (gameMode === 'multi' && socket) {
@@ -519,8 +587,8 @@
             
             for (let i = 0; i < 5; i++) {
                 particles.push({
-                    x: player.x + Math.cos(player.angle) * 30,
-                    y: player.y + Math.sin(player.angle) * 30,
+                    x: player.x + Math.cos(player.angle) * 30 * player.size,
+                    y: player.y + Math.sin(player.angle) * 30 * player.size,
                     vx: (Math.random() - 0.5) * 3 + Math.cos(player.angle) * 2,
                     vy: (Math.random() - 0.5) * 3 + Math.sin(player.angle) * 2,
                     life: 15,
@@ -624,7 +692,12 @@
                     y: player.y,
                     angle: player.angle,
                     health: player.health,
-                    score: score
+                    score: score,
+                    level: player.level,
+                    exp: player.exp,
+                    expNeeded: player.expNeeded,
+                    maxHealth: player.maxHealth,
+                    damage: player.damage
                 });
             }
             
@@ -641,8 +714,9 @@
                 if (!b.isEnemy && !b.ownerId) {
                     for (let j = enemies.length - 1; j >= 0; j--) {
                         const e = enemies[j];
+                        const dmg = b.damage || 20;
                         if (Math.abs(b.x - e.x) < 30 && Math.abs(b.y - e.y) < 30) {
-                            e.health -= 20;
+                            e.health -= dmg;
                             bullets.splice(i, 1);
                             createParticles(b.x, b.y, '#ff6600', 8);
                             
@@ -650,7 +724,19 @@
                                 createParticles(e.x, e.y, '#8b0000', 25);
                                 enemies.splice(j, 1);
                                 score += 15;
+                                player.exp += 1;
+                                while (player.exp >= player.expNeeded) {
+                                    player.exp -= player.expNeeded;
+                                    player.level += 1;
+                                    player.expNeeded = 1 + player.level;
+                                    player.maxHealth = 100 + (player.level - 1) * 20;
+                                    player.health = player.maxHealth;
+                                    player.damage = 15 + (player.level - 1) * 5;
+                                    player.size = 1 + (player.level - 1) * 0.1;
+                                }
                                 updateScore();
+                                updateLevel();
+                                updateHealth();
                             }
                             break;
                         }
@@ -660,16 +746,18 @@
                 if (gameMode === 'multi') {
                     for (const id in otherPlayers) {
                         const p = otherPlayers[id];
+                        const dmg = b.damage || 15;
                         if (Math.abs(b.x - p.x) < 30 && Math.abs(b.y - p.y) < 30 && b.ownerId !== playerId) {
-                            socket.emit('playerHit', { targetId: id, damage: 15 });
+                            socket.emit('playerHit', { targetId: id, damage: dmg });
                             bullets.splice(i, 1);
                             createParticles(b.x, b.y, '#ff0000', 10);
                             break;
                         }
                     }
                     
+                    const bulletDmg = b.damage || 15;
                     if (Math.abs(b.x - player.x) < 30 && Math.abs(b.y - player.y) < 30 && b.ownerId !== playerId) {
-                        player.health -= 15;
+                        player.health -= bulletDmg;
                         bullets.splice(i, 1);
                         createParticles(b.x, b.y, '#ff0000', 10);
                         updateHealth();
@@ -679,8 +767,9 @@
                         }
                     }
                 } else {
+                    const bulletDmg = b.damage || 15;
                     if (Math.abs(b.x - player.x) < 30 && Math.abs(b.y - player.y) < 30) {
-                        player.health -= 15;
+                        player.health -= bulletDmg;
                         bullets.splice(i, 1);
                         createParticles(b.x, b.y, '#ff0000', 10);
                         updateHealth();
@@ -763,7 +852,7 @@
             if (gameMode === 'single') {
                 for (const enemy of enemies) {
                     if (enemy.x > viewLeft && enemy.x < viewRight && enemy.y > viewTop && enemy.y < viewBottom) {
-                        drawTank(enemy.x, enemy.y, enemy.angle, enemy.color, false, enemy.health);
+                        drawTank(enemy.x, enemy.y, enemy.angle, enemy.color, false, enemy.health, 1);
                     }
                 }
             }
@@ -772,12 +861,12 @@
                 for (const id in otherPlayers) {
                     const p = otherPlayers[id];
                     if (p.x > viewLeft && p.x < viewRight && p.y > viewTop && p.y < viewBottom) {
-                        drawTank(p.x, p.y, p.angle, p.color || '#ff6600', false, p.health);
+                        drawTank(p.x, p.y, p.angle, p.color || '#ff6600', false, p.health, p.level || 1);
                     }
                 }
             }
             
-            drawTank(player.x, player.y, player.angle, player.color, true, player.health);
+            drawTank(player.x, player.y, player.angle, player.color, true, player.health, player.level);
             
             for (const b of bullets) {
                 if (b.x > viewLeft && b.x < viewRight && b.y > viewTop && b.y < viewBottom) {
