@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Танковая Битва</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #1a1a2e;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+        }
+        #gameContainer {
+            position: relative;
+        }
+        canvas {
+            background: #2d5016;
+            border: 4px solid #4a7c23;
+            border-radius: 8px;
+            box-shadow: 0 0 30px rgba(74, 124, 35, 0.5);
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 16-shadow: 2px;
+            textpx 2px 4px rgba(0,0,0,0.8);
+        }
+        #menu {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.85);
+            padding: 40px;
+            border-radius: 16px;
+            text-align: center;
+            color: white;
+            border: 2px solid #4a7c23;
+        }
+        #menu h1 {
+            font-size: 36px;
+            margin-bottom: 20px;
+            color: #7cb342;
+        }
+        .btn {
+            display: block;
+            width: 200px;
+            padding: 15px 30px;
+            margin: 10px auto;
+            font-size: 18px;
+            background: #4a7c23;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn:hover {
+            background: #5d9a2d;
+            transform: scale(1.05);
+        }
+        #score {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: white;
+            font-size: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+        }
+        #healthBar {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            width: 200px;
+            height: 20px;
+            background: #333;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 2px solid #555;
+        }
+        #healthFill {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, #ff4444, #44ff44);
+            transition: width 0.3s;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="900" height="600"></canvas>
+        <div id="ui">WASD - движение, Пробел - стрельба</div>
+        <div id="score">Счёт: 0</div>
+        <div id="healthBar"><div id="healthFill"></div></div>
+        <div id="menu">
+            <h1>ТАНКОВАЯ БИТВА</h1>
+            <button class="btn" onclick="startGame('single')">Одиночная игра</button>
+            <button class="btn" onclick="startGame('multi')">Мультиплеер</button>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const menu = document.getElementById('menu');
+        const scoreEl = document.getElementById('score');
+        const healthFill = document.getElementById('healthFill');
+        
+        let socket;
+        let playerId;
+        let gameMode = null;
+        let gameRunning = false;
+        let score = 0;
+        
+        const keys = {};
+        const bullets = [];
+        const enemies = [];
+        const particles = [];
+        const otherPlayers = {};
+        
+        const player = {
+            x: 450,
+            y: 500,
+            width: 40,
+            height: 40,
+            angle: 0,
+            speed: 4,
+            rotationSpeed: 0.08,
+            health: 100,
+            maxHealth: 100,
+            cooldown: 0,
+            color: '#4a7c23'
+        };
+        
+        document.addEventListener('keydown', e => {
+            keys[e.key.toLowerCase()] = true;
+            if (e.key === ' ') e.preventDefault();
+        });
+        
+        document.addEventListener('keyup', e => {
+            keys[e.key.toLowerCase()] = false;
+        });
+        
+        function startGame(mode) {
+            gameMode = mode;
+            menu.style.display = 'none';
+            gameRunning = true;
+            score = 0;
+            player.x = 450;
+            player.y = 500;
+            player.health = 100;
+            bullets.length = 0;
+            enemies.length = 0;
+            particles.length = 0;
+            updateScore();
+            updateHealth();
+            
+            if (mode === 'multi') {
+                socket = io();
+                
+                socket.on('init', (data) => {
+                    playerId = data.id;
+                    for (const id in data.players) {
+                        if (id !== playerId) {
+                            otherPlayers[id] = data.players[id];
+                        }
+                    }
+                });
+                
+                socket.on('playerJoined', (p) => {
+                    otherPlayers[p.id] = p;
+                });
+                
+                socket.on('playerLeft', (id) => {
+                    delete otherPlayers[id];
+                });
+                
+                socket.on('playerUpdated', (p) => {
+                    if (otherPlayers[p.id]) {
+                        otherPlayers[p.id] = p;
+                    }
+                });
+                
+                socket.on('bulletCreated', (b) => {
+                    if (b.ownerId !== playerId) {
+                        bullets.push(b);
+                    }
+                });
+                
+                socket.on('bulletRemoved', (id) => {
+                    const idx = bullets.findIndex(b => b.id === id);
+                    if (idx !== -1) bullets.splice(idx, 1);
+                });
+                
+                socket.on('bulletsUpdate', (serverBullets) => {
+                    for (const b of serverBullets) {
+                        if (b.ownerId !== playerId) {
+                            const exists = bullets.some(localB => localB.id === b.id);
+                            if (!exists) {
+                                bullets.push(b);
+                            }
+                        }
+                    }
+                });
+            }
+            
+            gameLoop();
+        }
+        
+        function updateScore() {
+            scoreEl.textContent = `Счёт: ${score}`;
+        }
+        
+        function updateHealth() {
+            healthFill.style.width = `${player.health}%`;
+        }
+        
+        function drawTank(x, y, angle, color, isPlayer = false) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(angle);
+            
+            ctx.fillStyle = color;
+            ctx.fillRect(-20, -15, 40, 30);
+            
+            ctx.fillStyle = '#333';
+            ctx.fillRect(15, -5, 15, 10);
+            
+            ctx.fillStyle = '#222';
+            ctx.beginPath();
+            ctx.arc(-12, -12, 6, 0, Math.PI * 2);
+            ctx.arc(-12, 12, 6, 0, Math.PI * 2);
+            ctx.arc(12, -12, 6, 0, Math.PI * 2);
+            ctx.arc(12, 12, 6, 0, Math.PI * 2);
+            ctx.fill();
+            
+            if (isPlayer) {
+                ctx.fillStyle = '#2d5016';
+                ctx.fillRect(-5, -8, 10, 16);
+            }
+            
+            ctx.restore();
+        }
+        
+        function shoot() {
+            if (player.cooldown > 0) return;
+            
+            if (gameMode === 'multi' && socket) {
+                socket.emit('shoot', { angle: player.angle });
+            } else {
+                const bulletSpeed = 8;
+                bullets.push({
+                    x: player.x + Math.cos(player.angle) * 25,
+                    y: player.y + Math.sin(player.angle) * 25,
+                    vx: Math.cos(player.angle) * bulletSpeed,
+                    vy: Math.sin(player.angle) * bulletSpeed,
+                    radius: 5
+                });
+            }
+            player.cooldown = 20;
+        }
+        
+        function spawnEnemy() {
+            if (gameMode === 'single' && enemies.length < 5 + Math.floor(score / 50)) {
+                const side = Math.floor(Math.random() * 4);
+                let x, y;
+                
+                switch(side) {
+                    case 0: x = Math.random() * canvas.width; y = -30; break;
+                    case 1: x = canvas.width + 30; y = Math.random() * canvas.height; break;
+                    case 2: x = Math.random() * canvas.width; y = canvas.height + 30; break;
+                    case 3: x = -30; y = Math.random() * canvas.height; break;
+                }
+                
+                enemies.push({
+                    x, y,
+                    width: 35,
+                    height: 35,
+                    angle: Math.atan2(player.y - y, player.x - x),
+                    speed: 1.5 + Math.random(),
+                    health: 30,
+                    cooldown: 0,
+                    color: '#8b0000'
+                });
+            }
+        }
+        
+        function enemyShoot(enemy) {
+            if (enemy.cooldown > 0) return;
+            
+            const bulletSpeed = 5;
+            bullets.push({
+                x: enemy.x + Math.cos(enemy.angle) * 20,
+                y: enemy.y + Math.sin(enemy.angle) * 20,
+                vx: Math.cos(enemy.angle) * bulletSpeed,
+                vy: Math.sin(enemy.angle) * bulletSpeed,
+                radius: 5,
+                isEnemy: true
+            });
+            enemy.cooldown = 60;
+        }
+        
+        function createParticles(x, y, color, count = 10) {
+            for (let i = 0; i < count; i++) {
+                particles.push({
+                    x, y,
+                    vx: (Math.random() - 0.5) * 5,
+                    vy: (Math.random() - 0.5) * 5,
+                    life: 30,
+                    color
+                });
+            }
+        }
+        
+        function update() {
+            if (keys['w']) {
+                player.x += Math.cos(player.angle) * player.speed;
+                player.y += Math.sin(player.angle) * player.speed;
+            }
+            if (keys['s']) {
+                player.x -= Math.cos(player.angle) * player.speed * 0.6;
+                player.y -= Math.sin(player.angle) * player.speed * 0.6;
+            }
+            if (keys['a']) player.angle -= player.rotationSpeed;
+            if (keys['d']) player.angle += player.rotationSpeed;
+            if (keys[' ']) shoot();
+            
+            player.x = Math.max(25, Math.min(canvas.width - 25, player.x));
+            player.y = Math.max(25, Math.min(canvas.height - 25, player.y));
+            
+            if (player.cooldown > 0) player.cooldown--;
+            
+            if (gameMode === 'multi' && socket) {
+                socket.emit('update', {
+                    x: player.x,
+                    y: player.y,
+                    angle: player.angle,
+                    health: player.health,
+                    score: score
+                });
+            }
+            
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const b = bullets[i];
+                b.x += b.vx;
+                b.y += b.vy;
+                
+                if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
+                    bullets.splice(i, 1);
+                    continue;
+                }
+                
+                if (!b.isEnemy && !b.ownerId) {
+                    for (let j = enemies.length - 1; j >= 0; j--) {
+                        const e = enemies[j];
+                        if (Math.abs(b.x - e.x) < 25 && Math.abs(b.y - e.y) < 25) {
+                            e.health -= 15;
+                            bullets.splice(i, 1);
+                            createParticles(b.x, b.y, '#ff6600', 5);
+                            
+                            if (e.health <= 0) {
+                                createParticles(e.x, e.y, '#8b0000', 20);
+                                enemies.splice(j, 1);
+                                score += 10;
+                                updateScore();
+                            }
+                            break;
+                        }
+                    }
+                }
+                
+                if (gameMode === 'multi') {
+                    for (const id in otherPlayers) {
+                        const p = otherPlayers[id];
+                        if (Math.abs(b.x - p.x) < 25 && Math.abs(b.y - p.y) < 25 && b.ownerId !== playerId) {
+                            socket.emit('playerHit', { targetId: id, damage: 10 });
+                            bullets.splice(i, 1);
+                            createParticles(b.x, b.y, '#ff0000', 8);
+                            break;
+                        }
+                    }
+                    
+                    if (Math.abs(b.x - player.x) < 25 && Math.abs(b.y - player.y) < 25 && b.ownerId !== playerId) {
+                        player.health -= 10;
+                        bullets.splice(i, 1);
+                        createParticles(b.x, b.y, '#ff0000', 8);
+                        updateHealth();
+                        
+                        if (player.health <= 0) {
+                            gameOver();
+                        }
+                    }
+                } else {
+                    if (Math.abs(b.x - player.x) < 25 && Math.abs(b.y - player.y) < 25) {
+                        player.health -= 10;
+                        bullets.splice(i, 1);
+                        createParticles(b.x, b.y, '#ff0000', 8);
+                        updateHealth();
+                        
+                        if (player.health <= 0) {
+                            gameOver();
+                        }
+                    }
+                }
+            }
+            
+            if (gameMode === 'single') {
+                if (Math.random() < 0.02) spawnEnemy();
+                
+                for (const enemy of enemies) {
+                    const dx = player.x - enemy.x;
+                    const dy = player.y - enemy.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    enemy.angle = Math.atan2(dy, dx);
+                    
+                    if (dist > 150) {
+                        enemy.x += Math.cos(enemy.angle) * enemy.speed;
+                        enemy.y += Math.sin(enemy.angle) * enemy.speed;
+                    }
+                    
+                    enemy.x = Math.max(20, Math.min(canvas.width - 20, enemy.x));
+                    enemy.y = Math.max(20, Math.min(canvas.height - 20, enemy.y));
+                    
+                    if (enemy.cooldown > 0) enemy.cooldown--;
+                    if (dist < 300 && Math.random() < 0.02) enemyShoot(enemy);
+                }
+            }
+            
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life--;
+                if (p.life <= 0) particles.splice(i, 1);
+            }
+        }
+        
+        function draw() {
+            ctx.fillStyle = '#2d5016';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.strokeStyle = '#3d6020';
+            ctx.lineWidth = 2;
+            for (let i = 0; i < canvas.width; i += 50) {
+                ctx.beginPath();
+                ctx.moveTo(i, 0);
+                ctx.lineTo(i, canvas.height);
+                ctx.stroke();
+            }
+            for (let i = 0; i < canvas.height; i += 50) {
+                ctx.beginPath();
+                ctx.moveTo(0, i);
+                ctx.lineTo(canvas.width, i);
+                ctx.stroke();
+            }
+            
+            if (gameMode === 'single') {
+                for (const enemy of enemies) {
+                    drawTank(enemy.x, enemy.y, enemy.angle, enemy.color);
+                }
+            }
+            
+            if (gameMode === 'multi') {
+                for (const id in otherPlayers) {
+                    const p = otherPlayers[id];
+                    drawTank(p.x, p.y, p.angle, p.color || '#ff6600');
+                }
+            }
+            
+            drawTank(player.x, player.y, player.angle, player.color, true);
+            
+            for (const b of bullets) {
+                ctx.fillStyle = b.isEnemy ? '#ff4444' : '#ffff00';
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            for (const p of particles) {
+                ctx.fillStyle = p.color;
+                ctx.globalAlpha = p.life / 30;
+                ctx.fillRect(p.x, p.y, 4, 4);
+            }
+            ctx.globalAlpha = 1;
+        }
+        
+        function gameOver() {
+            gameRunning = false;
+            if (socket) {
+                socket.disconnect();
+            }
+            menu.style.display = 'block';
+            document.querySelector('#menu h1').textContent = `Игра окончена! Счёт: ${score}`;
+        }
+        
+        function gameLoop() {
+            if (!gameRunning) return;
+            
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+    </script>
+</body>
+</html>
