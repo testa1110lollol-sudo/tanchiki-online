@@ -2,7 +2,8 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
     <title>Танковая Битва</title>
     <style>
         * {
@@ -18,38 +19,42 @@
             min-height: 100vh;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             overflow: hidden;
+            touch-action: none;
         }
         #gameContainer {
             position: relative;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
         }
         canvas {
-            background: #2d5016;
-            border: 4px solid #4a7c23;
-            border-radius: 8px;
-            box-shadow: 0 0 30px rgba(74, 124, 35, 0.5);
+            display: block;
         }
         #ui {
             position: absolute;
             top: 10px;
             left: 10px;
             color: white;
-            font-size: 16-shadow: 2px;
-            textpx 2px 4px rgba(0,0,0,0.8);
+            font-size: 14px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            z-index: 10;
+            pointer-events: none;
         }
         #menu {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            background: rgba(0, 0, 0, 0.85);
-            padding: 40px;
+            background: rgba(0, 0, 0, 0.9);
+            padding: 30px;
             border-radius: 16px;
             text-align: center;
             color: white;
             border: 2px solid #4a7c23;
+            z-index: 100;
         }
         #menu h1 {
-            font-size: 36px;
+            font-size: 28px;
             margin-bottom: 20px;
             color: #7cb342;
         }
@@ -75,19 +80,22 @@
             top: 10px;
             right: 10px;
             color: white;
-            font-size: 20px;
+            font-size: 18px;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            z-index: 10;
+            pointer-events: none;
         }
         #healthBar {
             position: absolute;
-            bottom: 10px;
+            bottom: 20px;
             left: 10px;
-            width: 200px;
-            height: 20px;
+            width: 150px;
+            height: 16px;
             background: #333;
-            border-radius: 10px;
+            border-radius: 8px;
             overflow: hidden;
             border: 2px solid #555;
+            z-index: 10;
         }
         #healthFill {
             width: 100%;
@@ -95,14 +103,95 @@
             background: linear-gradient(90deg, #ff4444, #44ff44);
             transition: width 0.3s;
         }
+        #minimap {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            width: 120px;
+            height: 120px;
+            background: rgba(0,0,0,0.7);
+            border: 2px solid #4a7c23;
+            border-radius: 8px;
+            z-index: 10;
+        }
+        #mobileControls {
+            display: none;
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 200px;
+            z-index: 20;
+        }
+        .joystick-zone {
+            position: absolute;
+            bottom: 20px;
+            width: 120px;
+            height: 120px;
+            background: rgba(255,255,255,0.1);
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+        }
+        #joystickLeft {
+            left: 20px;
+        }
+        #joystickRight {
+            right: 20px;
+        }
+        .joystick-knob {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            background: rgba(124, 179, 66, 0.7);
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+        #shootBtn {
+            position: absolute;
+            bottom: 80px;
+            right: 60px;
+            width: 80px;
+            height: 80px;
+            background: rgba(255, 68, 68, 0.6);
+            border: 3px solid rgba(255, 100, 100, 0.8);
+            border-radius: 50%;
+            font-size: 14px;
+            color: white;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        @media (pointer: coarse) {
+            #mobileControls {
+                display: block;
+            }
+            #ui {
+                font-size: 12px;
+            }
+        }
     </style>
 </head>
 <body>
     <div id="gameContainer">
-        <canvas id="gameCanvas" width="900" height="600"></canvas>
-        <div id="ui">WASD - движение, Пробел - стрельба</div>
+        <canvas id="gameCanvas"></canvas>
+        <div id="ui">WASD/стрелки - движение, Клик/К - стрельба</div>
         <div id="score">Счёт: 0</div>
         <div id="healthBar"><div id="healthFill"></div></div>
+        <canvas id="minimap"></canvas>
+        <div id="mobileControls">
+            <div class="joystick-zone" id="joystickLeft">
+                <div class="joystick-knob" id="knobLeft"></div>
+            </div>
+            <div class="joystick-zone" id="joystickRight">
+                <div class="joystick-knob" id="knobRight"></div>
+            </div>
+            <div id="shootBtn">ОГОНЬ</div>
+        </div>
         <div id="menu">
             <h1>ТАНКОВАЯ БИТВА</h1>
             <button class="btn" onclick="startGame('single')">Одиночная игра</button>
@@ -114,15 +203,27 @@
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
+        const minimapCanvas = document.getElementById('minimap');
+        const minimapCtx = minimapCanvas.getContext('2d');
         const menu = document.getElementById('menu');
         const scoreEl = document.getElementById('score');
         const healthFill = document.getElementById('healthFill');
+        
+        const joystickLeft = document.getElementById('joystickLeft');
+        const joystickRight = document.getElementById('joystickRight');
+        const knobLeft = document.getElementById('knobLeft');
+        const knobRight = document.getElementById('knobRight');
+        const shootBtn = document.getElementById('shootBtn');
         
         let socket;
         let playerId;
         let gameMode = null;
         let gameRunning = false;
         let score = 0;
+        
+        let mapWidth = 3000;
+        let mapHeight = 3000;
+        let camera = { x: 0, y: 0 };
         
         const keys = {};
         const bullets = [];
@@ -131,26 +232,95 @@
         const otherPlayers = {};
         
         const player = {
-            x: 450,
-            y: 500,
-            width: 40,
-            height: 40,
+            x: mapWidth / 2,
+            y: mapHeight / 2,
+            width: 50,
+            height: 50,
             angle: 0,
-            speed: 4,
-            rotationSpeed: 0.08,
+            speed: 5,
+            rotationSpeed: 0.06,
             health: 100,
             maxHealth: 100,
             cooldown: 0,
             color: '#4a7c23'
         };
         
+        let joystickState = {
+            left: { x: 0, y: 0 },
+            right: { x: 0, y: 0 }
+        };
+        
+        let isMobile = false;
+        
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            minimapCanvas.width = 120;
+            minimapCanvas.height = 120;
+            isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+        
         document.addEventListener('keydown', e => {
             keys[e.key.toLowerCase()] = true;
+            keys[e.code] = true;
             if (e.key === ' ') e.preventDefault();
         });
         
         document.addEventListener('keyup', e => {
             keys[e.key.toLowerCase()] = false;
+            keys[e.code] = false;
+        });
+        
+        function handleJoystick(zone, knob, stateKey) {
+            let active = false;
+            let startX, startY;
+            
+            zone.addEventListener('touchstart', e => {
+                e.preventDefault();
+                active = true;
+                const touch = e.touches[0];
+                const rect = zone.getBoundingClientRect();
+                startX = rect.left + rect.width / 2;
+                startY = rect.top + rect.height / 2;
+            });
+            
+            zone.addEventListener('touchmove', e => {
+                e.preventDefault();
+                if (!active) return;
+                const touch = e.touches[0];
+                const dx = touch.clientX - startX;
+                const dy = touch.clientY - startY;
+                const maxDist = 35;
+                const dist = Math.min(maxDist, Math.sqrt(dx * dx + dy * dy));
+                const angle = Math.atan2(dy, dx);
+                
+                joystickState[stateKey].x = (dist / maxDist) * Math.cos(angle);
+                joystickState[stateKey].y = (dist / maxDist) * Math.sin(angle);
+                
+                knob.style.transform = `translate(calc(-50% + ${joystickState[stateKey].x * maxDist}px), calc(-50% + ${joystickState[stateKey].y * maxDist}px))`;
+            });
+            
+            zone.addEventListener('touchend', () => {
+                active = false;
+                joystickState[stateKey].x = 0;
+                joystickState[stateKey].y = 0;
+                knob.style.transform = 'translate(-50%, -50%)';
+            });
+        }
+        
+        handleJoystick(joystickLeft, knobLeft, 'left');
+        handleJoystick(joystickRight, knobRight, 'right');
+        
+        shootBtn.addEventListener('touchstart', e => {
+            e.preventDefault();
+            shoot();
+            shootBtn.style.background = 'rgba(255, 100, 100, 0.9)';
+        });
+        
+        shootBtn.addEventListener('touchend', () => {
+            shootBtn.style.background = 'rgba(255, 68, 68, 0.6)';
         });
         
         function startGame(mode) {
@@ -158,8 +328,8 @@
             menu.style.display = 'none';
             gameRunning = true;
             score = 0;
-            player.x = 450;
-            player.y = 500;
+            player.x = mapWidth / 2;
+            player.y = mapHeight / 2;
             player.health = 100;
             bullets.length = 0;
             enemies.length = 0;
@@ -168,19 +338,25 @@
             updateHealth();
             
             if (mode === 'multi') {
-                socket = io();
+                socket = io({ 
+                    reconnection: true,
+                    reconnectionAttempts: 5,
+                    reconnectionDelay: 1000
+                });
                 
                 socket.on('init', (data) => {
                     playerId = data.id;
+                    mapWidth = data.mapWidth || 3000;
+                    mapHeight = data.mapHeight || 3000;
                     for (const id in data.players) {
                         if (id !== playerId) {
-                            otherPlayers[id] = data.players[id];
+                            otherPlayers[id] = { ...data.players[id], lastX: data.players[id].x, lastY: data.players[id].y };
                         }
                     }
                 });
                 
                 socket.on('playerJoined', (p) => {
-                    otherPlayers[p.id] = p;
+                    otherPlayers[p.id] = { ...p, lastX: p.x, lastY: p.y };
                 });
                 
                 socket.on('playerLeft', (id) => {
@@ -189,7 +365,14 @@
                 
                 socket.on('playerUpdated', (p) => {
                     if (otherPlayers[p.id]) {
-                        otherPlayers[p.id] = p;
+                        otherPlayers[p.id].lastX = otherPlayers[p.id].x;
+                        otherPlayers[p.id].lastY = otherPlayers[p.id].y;
+                        otherPlayers[p.id].x = p.x;
+                        otherPlayers[p.id].y = p.y;
+                        otherPlayers[p.id].angle = p.angle;
+                        otherPlayers[p.id].health = p.health;
+                        otherPlayers[p.id].score = p.score;
+                        otherPlayers[p.id].color = p.color;
                     }
                 });
                 
@@ -227,31 +410,74 @@
             healthFill.style.width = `${player.health}%`;
         }
         
-        function drawTank(x, y, angle, color, isPlayer = false) {
+        function drawTank(x, y, angle, color, isPlayer = false, health = 100) {
             ctx.save();
             ctx.translate(x, y);
             ctx.rotate(angle);
             
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+            ctx.shadowBlur = 10;
+            ctx.shadowOffsetX = 5;
+            ctx.shadowOffsetY = 5;
+            
             ctx.fillStyle = color;
-            ctx.fillRect(-20, -15, 40, 30);
+            ctx.fillRect(-25, -18, 50, 36);
+            
+            ctx.fillStyle = shadeColor(color, -20);
+            ctx.fillRect(-25, -18, 50, 8);
+            ctx.fillRect(-25, 10, 50, 8);
+            
+            ctx.shadowColor = 'transparent';
+            
+            ctx.fillStyle = '#1a1a1a';
+            ctx.fillRect(20, -6, 18, 12);
             
             ctx.fillStyle = '#333';
-            ctx.fillRect(15, -5, 15, 10);
+            ctx.beginPath();
+            ctx.arc(-15, -15, 7, 0, Math.PI * 2);
+            ctx.arc(-15, 15, 7, 0, Math.PI * 2);
+            ctx.arc(15, -15, 7, 0, Math.PI * 2);
+            ctx.arc(15, 15, 7, 0, Math.PI * 2);
+            ctx.fill();
             
             ctx.fillStyle = '#222';
             ctx.beginPath();
-            ctx.arc(-12, -12, 6, 0, Math.PI * 2);
-            ctx.arc(-12, 12, 6, 0, Math.PI * 2);
-            ctx.arc(12, -12, 6, 0, Math.PI * 2);
-            ctx.arc(12, 12, 6, 0, Math.PI * 2);
+            ctx.arc(-15, -15, 4, 0, Math.PI * 2);
+            ctx.arc(-15, 15, 4, 0, Math.PI * 2);
+            ctx.arc(15, -15, 4, 0, Math.PI * 2);
+            ctx.arc(15, 15, 4, 0, Math.PI * 2);
             ctx.fill();
             
             if (isPlayer) {
                 ctx.fillStyle = '#2d5016';
-                ctx.fillRect(-5, -8, 10, 16);
+                ctx.fillRect(-8, -10, 16, 20);
+                
+                ctx.fillStyle = '#4a7c23';
+                ctx.fillRect(-25, -22, 8, 4);
+                ctx.fillRect(-25, 18, 8, 4);
+                ctx.fillRect(17, -22, 8, 4);
+                ctx.fillRect(17, 18, 8, 4);
             }
             
             ctx.restore();
+            
+            if (health < 100) {
+                ctx.fillStyle = '#333';
+                ctx.fillRect(x - 25, y - 40, 50, 6);
+                ctx.fillStyle = health > 50 ? '#44ff44' : health > 25 ? '#ffff44' : '#ff4444';
+                ctx.fillRect(x - 25, y - 40, 50 * (health / 100), 6);
+            }
+        }
+        
+        function shadeColor(color, percent) {
+            const num = parseInt(color.replace('#', ''), 16);
+            const amt = Math.round(2.55 * percent);
+            const R = (num >> 16) + amt;
+            const G = (num >> 8 & 0x00FF) + amt;
+            const B = (num & 0x0000FF) + amt;
+            return '#' + (0x1000000 + (R < 255 ? R < 1 ? 0 : R : 255) * 0x10000 + 
+                (G < 255 ? G < 1 ? 0 : G : 255) * 0x100 + 
+                (B < 255 ? B < 1 ? 0 : B : 255)).toString(16).slice(1);
         }
         
         function shoot() {
@@ -260,37 +486,48 @@
             if (gameMode === 'multi' && socket) {
                 socket.emit('shoot', { angle: player.angle });
             } else {
-                const bulletSpeed = 8;
+                const bulletSpeed = 10;
                 bullets.push({
-                    x: player.x + Math.cos(player.angle) * 25,
-                    y: player.y + Math.sin(player.angle) * 25,
+                    x: player.x + Math.cos(player.angle) * 30,
+                    y: player.y + Math.sin(player.angle) * 30,
                     vx: Math.cos(player.angle) * bulletSpeed,
                     vy: Math.sin(player.angle) * bulletSpeed,
-                    radius: 5
+                    radius: 6
                 });
             }
-            player.cooldown = 20;
+            player.cooldown = 15;
+            
+            for (let i = 0; i < 5; i++) {
+                particles.push({
+                    x: player.x + Math.cos(player.angle) * 30,
+                    y: player.y + Math.sin(player.angle) * 30,
+                    vx: (Math.random() - 0.5) * 3 + Math.cos(player.angle) * 2,
+                    vy: (Math.random() - 0.5) * 3 + Math.sin(player.angle) * 2,
+                    life: 15,
+                    color: '#ffff00'
+                });
+            }
         }
         
         function spawnEnemy() {
-            if (gameMode === 'single' && enemies.length < 5 + Math.floor(score / 50)) {
+            if (gameMode === 'single' && enemies.length < 8 + Math.floor(score / 50)) {
                 const side = Math.floor(Math.random() * 4);
                 let x, y;
                 
                 switch(side) {
-                    case 0: x = Math.random() * canvas.width; y = -30; break;
-                    case 1: x = canvas.width + 30; y = Math.random() * canvas.height; break;
-                    case 2: x = Math.random() * canvas.width; y = canvas.height + 30; break;
-                    case 3: x = -30; y = Math.random() * canvas.height; break;
+                    case 0: x = Math.random() * mapWidth; y = -40; break;
+                    case 1: x = mapWidth + 40; y = Math.random() * mapHeight; break;
+                    case 2: x = Math.random() * mapWidth; y = mapHeight + 40; break;
+                    case 3: x = -40; y = Math.random() * mapHeight; break;
                 }
                 
                 enemies.push({
                     x, y,
-                    width: 35,
-                    height: 35,
+                    width: 45,
+                    height: 45,
                     angle: Math.atan2(player.y - y, player.x - x),
-                    speed: 1.5 + Math.random(),
-                    health: 30,
+                    speed: 2 + Math.random(),
+                    health: 40,
                     cooldown: 0,
                     color: '#8b0000'
                 });
@@ -300,47 +537,74 @@
         function enemyShoot(enemy) {
             if (enemy.cooldown > 0) return;
             
-            const bulletSpeed = 5;
+            const bulletSpeed = 6;
             bullets.push({
-                x: enemy.x + Math.cos(enemy.angle) * 20,
-                y: enemy.y + Math.sin(enemy.angle) * 20,
+                x: enemy.x + Math.cos(enemy.angle) * 25,
+                y: enemy.y + Math.sin(enemy.angle) * 25,
                 vx: Math.cos(enemy.angle) * bulletSpeed,
                 vy: Math.sin(enemy.angle) * bulletSpeed,
-                radius: 5,
+                radius: 6,
                 isEnemy: true
             });
-            enemy.cooldown = 60;
+            enemy.cooldown = 50;
         }
         
         function createParticles(x, y, color, count = 10) {
             for (let i = 0; i < count; i++) {
                 particles.push({
                     x, y,
-                    vx: (Math.random() - 0.5) * 5,
-                    vy: (Math.random() - 0.5) * 5,
-                    life: 30,
+                    vx: (Math.random() - 0.5) * 6,
+                    vy: (Math.random() - 0.5) * 6,
+                    life: 25,
                     color
                 });
             }
         }
         
         function update() {
-            if (keys['w']) {
-                player.x += Math.cos(player.angle) * player.speed;
-                player.y += Math.sin(player.angle) * player.speed;
+            if (isMobile) {
+                const moveX = joystickState.left.x;
+                const moveY = joystickState.left.y;
+                const rotX = joystickState.right.x;
+                
+                if (Math.abs(moveY) > 0.1) {
+                    player.x += Math.cos(player.angle) * player.speed * -moveY;
+                    player.y += Math.sin(player.angle) * player.speed * -moveY;
+                }
+                if (Math.abs(rotX) > 0.1) {
+                    player.angle += player.rotationSpeed * rotX * 2;
+                }
+            } else {
+                if (keys['w'] || keys['arrowup']) {
+                    player.x += Math.cos(player.angle) * player.speed;
+                    player.y += Math.sin(player.angle) * player.speed;
+                }
+                if (keys['s'] || keys['arrowdown']) {
+                    player.x -= Math.cos(player.angle) * player.speed * 0.6;
+                    player.y -= Math.sin(player.angle) * player.speed * 0.6;
+                }
+                if (keys['a'] || keys['arrowleft']) player.angle -= player.rotationSpeed;
+                if (keys['d'] || keys['arrowright']) player.angle += player.rotationSpeed;
             }
-            if (keys['s']) {
-                player.x -= Math.cos(player.angle) * player.speed * 0.6;
-                player.y -= Math.sin(player.angle) * player.speed * 0.6;
-            }
-            if (keys['a']) player.angle -= player.rotationSpeed;
-            if (keys['d']) player.angle += player.rotationSpeed;
-            if (keys[' ']) shoot();
             
-            player.x = Math.max(25, Math.min(canvas.width - 25, player.x));
-            player.y = Math.max(25, Math.min(canvas.height - 25, player.y));
+            canvas.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                shoot();
+            });
+            canvas.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                shoot();
+            });
+            
+            player.x = Math.max(30, Math.min(mapWidth - 30, player.x));
+            player.y = Math.max(30, Math.min(mapHeight - 30, player.y));
             
             if (player.cooldown > 0) player.cooldown--;
+            
+            camera.x = player.x - canvas.width / 2;
+            camera.y = player.y - canvas.height / 2;
+            camera.x = Math.max(0, Math.min(mapWidth - canvas.width, camera.x));
+            camera.y = Math.max(0, Math.min(mapHeight - canvas.height, camera.y));
             
             if (gameMode === 'multi' && socket) {
                 socket.emit('update', {
@@ -357,7 +621,7 @@
                 b.x += b.vx;
                 b.y += b.vy;
                 
-                if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
+                if (b.x < 0 || b.x > mapWidth || b.y < 0 || b.y > mapHeight) {
                     bullets.splice(i, 1);
                     continue;
                 }
@@ -365,15 +629,15 @@
                 if (!b.isEnemy && !b.ownerId) {
                     for (let j = enemies.length - 1; j >= 0; j--) {
                         const e = enemies[j];
-                        if (Math.abs(b.x - e.x) < 25 && Math.abs(b.y - e.y) < 25) {
-                            e.health -= 15;
+                        if (Math.abs(b.x - e.x) < 30 && Math.abs(b.y - e.y) < 30) {
+                            e.health -= 20;
                             bullets.splice(i, 1);
-                            createParticles(b.x, b.y, '#ff6600', 5);
+                            createParticles(b.x, b.y, '#ff6600', 8);
                             
                             if (e.health <= 0) {
-                                createParticles(e.x, e.y, '#8b0000', 20);
+                                createParticles(e.x, e.y, '#8b0000', 25);
                                 enemies.splice(j, 1);
-                                score += 10;
+                                score += 15;
                                 updateScore();
                             }
                             break;
@@ -384,18 +648,18 @@
                 if (gameMode === 'multi') {
                     for (const id in otherPlayers) {
                         const p = otherPlayers[id];
-                        if (Math.abs(b.x - p.x) < 25 && Math.abs(b.y - p.y) < 25 && b.ownerId !== playerId) {
-                            socket.emit('playerHit', { targetId: id, damage: 10 });
+                        if (Math.abs(b.x - p.x) < 30 && Math.abs(b.y - p.y) < 30 && b.ownerId !== playerId) {
+                            socket.emit('playerHit', { targetId: id, damage: 15 });
                             bullets.splice(i, 1);
-                            createParticles(b.x, b.y, '#ff0000', 8);
+                            createParticles(b.x, b.y, '#ff0000', 10);
                             break;
                         }
                     }
                     
-                    if (Math.abs(b.x - player.x) < 25 && Math.abs(b.y - player.y) < 25 && b.ownerId !== playerId) {
-                        player.health -= 10;
+                    if (Math.abs(b.x - player.x) < 30 && Math.abs(b.y - player.y) < 30 && b.ownerId !== playerId) {
+                        player.health -= 15;
                         bullets.splice(i, 1);
-                        createParticles(b.x, b.y, '#ff0000', 8);
+                        createParticles(b.x, b.y, '#ff0000', 10);
                         updateHealth();
                         
                         if (player.health <= 0) {
@@ -403,10 +667,10 @@
                         }
                     }
                 } else {
-                    if (Math.abs(b.x - player.x) < 25 && Math.abs(b.y - player.y) < 25) {
-                        player.health -= 10;
+                    if (Math.abs(b.x - player.x) < 30 && Math.abs(b.y - player.y) < 30) {
+                        player.health -= 15;
                         bullets.splice(i, 1);
-                        createParticles(b.x, b.y, '#ff0000', 8);
+                        createParticles(b.x, b.y, '#ff0000', 10);
                         updateHealth();
                         
                         if (player.health <= 0) {
@@ -417,7 +681,7 @@
             }
             
             if (gameMode === 'single') {
-                if (Math.random() < 0.02) spawnEnemy();
+                if (Math.random() < 0.015) spawnEnemy();
                 
                 for (const enemy of enemies) {
                     const dx = player.x - enemy.x;
@@ -426,16 +690,16 @@
                     
                     enemy.angle = Math.atan2(dy, dx);
                     
-                    if (dist > 150) {
+                    if (dist > 180) {
                         enemy.x += Math.cos(enemy.angle) * enemy.speed;
                         enemy.y += Math.sin(enemy.angle) * enemy.speed;
                     }
                     
-                    enemy.x = Math.max(20, Math.min(canvas.width - 20, enemy.x));
-                    enemy.y = Math.max(20, Math.min(canvas.height - 20, enemy.y));
+                    enemy.x = Math.max(25, Math.min(mapWidth - 25, enemy.x));
+                    enemy.y = Math.max(25, Math.min(mapHeight - 25, enemy.y));
                     
                     if (enemy.cooldown > 0) enemy.cooldown--;
-                    if (dist < 300 && Math.random() < 0.02) enemyShoot(enemy);
+                    if (dist < 350 && Math.random() < 0.015) enemyShoot(enemy);
                 }
             }
             
@@ -443,6 +707,8 @@
                 const p = particles[i];
                 p.x += p.vx;
                 p.y += p.vy;
+                p.vx *= 0.95;
+                p.vy *= 0.95;
                 p.life--;
                 if (p.life <= 0) particles.splice(i, 1);
             }
@@ -452,49 +718,119 @@
             ctx.fillStyle = '#2d5016';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
-            ctx.strokeStyle = '#3d6020';
+            ctx.save();
+            ctx.translate(-camera.x, -camera.y);
+            
+            ctx.strokeStyle = '#264012';
             ctx.lineWidth = 2;
-            for (let i = 0; i < canvas.width; i += 50) {
+            for (let i = 0; i < mapWidth; i += 100) {
                 ctx.beginPath();
                 ctx.moveTo(i, 0);
-                ctx.lineTo(i, canvas.height);
+                ctx.lineTo(i, mapHeight);
                 ctx.stroke();
             }
-            for (let i = 0; i < canvas.height; i += 50) {
+            for (let i = 0; i < mapHeight; i += 100) {
                 ctx.beginPath();
                 ctx.moveTo(0, i);
-                ctx.lineTo(canvas.width, i);
+                ctx.lineTo(mapWidth, i);
                 ctx.stroke();
             }
             
+            ctx.fillStyle = '#3d6020';
+            for (let i = 0; i < 50; i++) {
+                const rx = Math.random() * mapWidth;
+                const ry = Math.random() * mapHeight;
+                ctx.beginPath();
+                ctx.arc(rx, ry, 20 + Math.random() * 30, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            const viewLeft = camera.x - 50;
+            const viewRight = camera.x + canvas.width + 50;
+            const viewTop = camera.y - 50;
+            const viewBottom = camera.y + canvas.height + 50;
+            
             if (gameMode === 'single') {
                 for (const enemy of enemies) {
-                    drawTank(enemy.x, enemy.y, enemy.angle, enemy.color);
+                    if (enemy.x > viewLeft && enemy.x < viewRight && enemy.y > viewTop && enemy.y < viewBottom) {
+                        drawTank(enemy.x, enemy.y, enemy.angle, enemy.color, false, enemy.health);
+                    }
                 }
             }
             
             if (gameMode === 'multi') {
                 for (const id in otherPlayers) {
                     const p = otherPlayers[id];
-                    drawTank(p.x, p.y, p.angle, p.color || '#ff6600');
+                    if (p.x > viewLeft && p.x < viewRight && p.y > viewTop && p.y < viewBottom) {
+                        drawTank(p.x, p.y, p.angle, p.color || '#ff6600', false, p.health);
+                    }
                 }
             }
             
-            drawTank(player.x, player.y, player.angle, player.color, true);
+            drawTank(player.x, player.y, player.angle, player.color, true, player.health);
             
             for (const b of bullets) {
-                ctx.fillStyle = b.isEnemy ? '#ff4444' : '#ffff00';
-                ctx.beginPath();
-                ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
-                ctx.fill();
+                if (b.x > viewLeft && b.x < viewRight && b.y > viewTop && b.y < viewBottom) {
+                    ctx.fillStyle = b.isEnemy ? '#ff4444' : '#ffff00';
+                    ctx.shadowColor = b.isEnemy ? '#ff0000' : '#ffff00';
+                    ctx.shadowBlur = 10;
+                    ctx.beginPath();
+                    ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+                }
             }
             
             for (const p of particles) {
                 ctx.fillStyle = p.color;
-                ctx.globalAlpha = p.life / 30;
-                ctx.fillRect(p.x, p.y, 4, 4);
+                ctx.globalAlpha = p.life / 25;
+                ctx.fillRect(p.x, p.y, 5, 5);
             }
             ctx.globalAlpha = 1;
+            
+            ctx.restore();
+            
+            drawMinimap();
+        }
+        
+        function drawMinimap() {
+            const scale = 120 / mapWidth;
+            
+            minimapCtx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            minimapCtx.fillRect(0, 0, 120, 120);
+            
+            minimapCtx.fillStyle = '#2d5016';
+            for (let i = 0; i < 50; i++) {
+                const rx = Math.random() * mapWidth * scale;
+                const ry = Math.random() * mapHeight * scale;
+                minimapCtx.beginPath();
+                minimapCtx.arc(rx, ry, 3, 0, Math.PI * 2);
+                minimapCtx.fill();
+            }
+            
+            if (gameMode === 'multi') {
+                for (const id in otherPlayers) {
+                    const p = otherPlayers[id];
+                    minimapCtx.fillStyle = p.color || '#ff6600';
+                    minimapCtx.beginPath();
+                    minimapCtx.arc(p.x * scale, p.y * scale, 4, 0, Math.PI * 2);
+                    minimapCtx.fill();
+                }
+            }
+            
+            minimapCtx.fillStyle = '#00ff00';
+            minimapCtx.beginPath();
+            minimapCtx.arc(player.x * scale, player.y * scale, 5, 0, Math.PI * 2);
+            minimapCtx.fill();
+            
+            minimapCtx.strokeStyle = '#ffffff';
+            minimapCtx.lineWidth = 1;
+            minimapCtx.strokeRect(
+                camera.x * scale, 
+                camera.y * scale, 
+                canvas.width * scale, 
+                canvas.height * scale
+            );
         }
         
         function gameOver() {

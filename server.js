@@ -13,8 +13,12 @@ const players = {};
 const bullets = [];
 const playersPerRoom = {};
 
+const MAP_WIDTH = 3000;
+const MAP_HEIGHT = 3000;
+const PLAYER_SPAWN = { x: MAP_WIDTH / 2, y: MAP_HEIGHT / 2 };
+
 function createBullet(x, y, angle, isEnemy = false) {
-    const bulletSpeed = 8;
+    const bulletSpeed = 10;
     return {
         id: Math.random().toString(36).substr(2, 9),
         x: x + Math.cos(angle) * 25,
@@ -29,35 +33,46 @@ function createBullet(x, y, angle, isEnemy = false) {
 io.on('connection', (socket) => {
     console.log('Игрок подключился:', socket.id);
     
+    const spawnX = PLAYER_SPAWN.x + (Math.random() - 0.5) * 200;
+    const spawnY = PLAYER_SPAWN.y + (Math.random() - 0.5) * 200;
+    
     players[socket.id] = {
         id: socket.id,
-        x: 450,
-        y: 500,
+        x: spawnX,
+        y: spawnY,
         angle: 0,
         health: 100,
         score: 0,
+        lastUpdate: Date.now(),
         color: '#' + Math.floor(Math.random()*16777215).toString(16)
     };
     
-    socket.emit('init', { id: socket.id, players, bullets });
+    socket.emit('init', { id: socket.id, players, bullets, mapWidth: MAP_WIDTH, mapHeight: MAP_HEIGHT });
     socket.broadcast.emit('playerJoined', players[socket.id]);
     
     socket.on('update', (data) => {
         if (players[socket.id]) {
-            players[socket.id].x = data.x;
-            players[socket.id].y = data.y;
-            players[socket.id].angle = data.angle;
-            players[socket.id].health = data.health;
-            players[socket.id].score = data.score;
+            const now = Date.now();
+            const lastUpdate = players[socket.id].lastUpdate || now;
+            const deltaTime = now - lastUpdate;
             
-            socket.broadcast.emit('playerUpdated', players[socket.id]);
+            if (deltaTime > 50) {
+                players[socket.id].x = data.x;
+                players[socket.id].y = data.y;
+                players[socket.id].angle = data.angle;
+                players[socket.id].health = data.health;
+                players[socket.id].score = data.score;
+                players[socket.id].lastUpdate = now;
+                
+                socket.broadcast.emit('playerUpdated', players[socket.id]);
+            }
         }
     });
     
     socket.on('shoot', (data) => {
         const player = players[socket.id];
         if (player) {
-            const bullet = createBullet(player.x, player.y, player.angle);
+            const bullet = createBullet(player.x, player.y, data.angle || player.angle);
             bullet.ownerId = socket.id;
             bullets.push(bullet);
             io.emit('bulletCreated', bullet);
@@ -78,8 +93,8 @@ io.on('connection', (socket) => {
             
             if (players[data.targetId].health <= 0) {
                 players[socket.id].score += 10;
-                players[data.targetId].x = 450;
-                players[data.targetId].y = 500;
+                players[data.targetId].x = PLAYER_SPAWN.x + (Math.random() - 0.5) * 200;
+                players[data.targetId].y = PLAYER_SPAWN.y + (Math.random() - 0.5) * 200;
                 players[data.targetId].health = 100;
             }
             
@@ -96,18 +111,19 @@ io.on('connection', (socket) => {
 });
 
 setInterval(() => {
+    const now = Date.now();
     for (let i = bullets.length - 1; i >= 0; i--) {
         const b = bullets[i];
         b.x += b.vx;
         b.y += b.vy;
         
-        if (b.x < 0 || b.x > 900 || b.y < 0 || b.y > 600) {
+        if (b.x < 0 || b.x > MAP_WIDTH || b.y < 0 || b.y > MAP_HEIGHT || now - b.createdAt > 5000) {
             bullets.splice(i, 1);
             io.emit('bulletRemoved', b.id);
         }
     }
     io.emit('bulletsUpdate', bullets);
-}, 1000 / 60);
+}, 1000 / 30);
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
