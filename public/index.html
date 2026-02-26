@@ -395,9 +395,8 @@
                 });
                 
                 socket.on('bulletCreated', (b) => {
-                    if (b.ownerId !== playerId) {
-                        bullets.push(b);
-                    }
+                    if (!b.radius) b.radius = 6;
+                    bullets.push(b);
                 });
                 
                 socket.on('bulletRemoved', (id) => {
@@ -407,11 +406,10 @@
                 
                 socket.on('bulletsUpdate', (serverBullets) => {
                     for (const b of serverBullets) {
-                        if (b.ownerId !== playerId) {
-                            const exists = bullets.some(localB => localB.id === b.id);
-                            if (!exists) {
-                                bullets.push(b);
-                            }
+                        if (!b.radius) b.radius = 6;
+                        const exists = bullets.some(localB => localB.id === b.id);
+                        if (!exists) {
+                            bullets.push(b);
                         }
                     }
                 });
@@ -501,17 +499,21 @@
         function shoot() {
             if (player.cooldown > 0) return;
             
+            const bulletSpeed = 10;
+            const bullet = {
+                x: player.x + Math.cos(player.angle) * 30,
+                y: player.y + Math.sin(player.angle) * 30,
+                vx: Math.cos(player.angle) * bulletSpeed,
+                vy: Math.sin(player.angle) * bulletSpeed,
+                radius: 6
+            };
+            
             if (gameMode === 'multi' && socket) {
                 socket.emit('shoot', { angle: player.angle });
+                bullet.ownerId = playerId;
+                bullets.push(bullet);
             } else {
-                const bulletSpeed = 10;
-                bullets.push({
-                    x: player.x + Math.cos(player.angle) * 30,
-                    y: player.y + Math.sin(player.angle) * 30,
-                    vx: Math.cos(player.angle) * bulletSpeed,
-                    vy: Math.sin(player.angle) * bulletSpeed,
-                    radius: 6
-                });
+                bullets.push(bullet);
             }
             player.cooldown = 15;
             
