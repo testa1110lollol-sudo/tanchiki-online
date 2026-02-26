@@ -250,6 +250,7 @@
         let gameMode = null;
         let gameRunning = false;
         let score = 0;
+        let lastUpdateTime = 0;
         
         let mapWidth = 3000;
         let mapHeight = 3000;
@@ -435,15 +436,30 @@
                 
                 socket.on('playerUpdated', (p) => {
                     if (otherPlayers[p.id]) {
-                        otherPlayers[p.id].lastX = otherPlayers[p.id].x;
-                        otherPlayers[p.id].lastY = otherPlayers[p.id].y;
-                        otherPlayers[p.id].x = p.x;
-                        otherPlayers[p.id].y = p.y;
-                        otherPlayers[p.id].angle = p.angle;
+                        otherPlayers[p.id].targetX = p.x;
+                        otherPlayers[p.id].targetY = p.y;
+                        otherPlayers[p.id].targetAngle = p.angle;
                         otherPlayers[p.id].health = p.health;
                         otherPlayers[p.id].score = p.score;
                         otherPlayers[p.id].color = p.color;
                         otherPlayers[p.id].level = p.level || 1;
+                        otherPlayers[p.id].exp = p.exp || 0;
+                        otherPlayers[p.id].expNeeded = p.expNeeded || 2;
+                        otherPlayers[p.id].maxHealth = p.maxHealth || 100;
+                        otherPlayers[p.id].damage = p.damage || 15;
+                        otherPlayers[p.id].lastUpdate = Date.now();
+                    } else if (p.id === playerId) {
+                        player.level = p.level || 1;
+                        player.exp = p.exp || 0;
+                        player.expNeeded = p.expNeeded || 2;
+                        player.maxHealth = p.maxHealth || 100;
+                        player.damage = p.damage || 15;
+                        player.health = p.health;
+                        score = p.score;
+                        player.size = 1 + (player.level - 1) * 0.1;
+                        updateScore();
+                        updateLevel();
+                        updateHealth();
                     }
                 });
                 
@@ -686,19 +702,33 @@
             camera.x = Math.max(0, Math.min(mapWidth - canvas.width, camera.x));
             camera.y = Math.max(0, Math.min(mapHeight - canvas.height, camera.y));
             
+            for (const id in otherPlayers) {
+                const p = otherPlayers[id];
+                if (p.targetX !== undefined) {
+                    const lerp = 0.2;
+                    p.x += (p.targetX - p.x) * lerp;
+                    p.y += (p.targetY - p.y) * lerp;
+                    p.angle += (p.targetAngle - p.angle) * lerp;
+                }
+            }
+            
             if (gameMode === 'multi' && socket) {
-                socket.emit('update', {
-                    x: player.x,
-                    y: player.y,
-                    angle: player.angle,
-                    health: player.health,
-                    score: score,
-                    level: player.level,
-                    exp: player.exp,
-                    expNeeded: player.expNeeded,
-                    maxHealth: player.maxHealth,
-                    damage: player.damage
-                });
+                const now = Date.now();
+                if (now - lastUpdateTime > 100) {
+                    socket.emit('update', {
+                        x: player.x,
+                        y: player.y,
+                        angle: player.angle,
+                        health: player.health,
+                        score: score,
+                        level: player.level,
+                        exp: player.exp,
+                        expNeeded: player.expNeeded,
+                        maxHealth: player.maxHealth,
+                        damage: player.damage
+                    });
+                    lastUpdateTime = now;
+                }
             }
             
             for (let i = bullets.length - 1; i >= 0; i--) {
