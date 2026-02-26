@@ -231,6 +231,15 @@
         const particles = [];
         const otherPlayers = {};
         
+        const obstacles = [];
+        for (let i = 0; i < 30; i++) {
+            obstacles.push({
+                x: Math.random() * mapWidth,
+                y: Math.random() * mapHeight,
+                r: 15 + Math.random() * 25
+            });
+        }
+        
         const player = {
             x: mapWidth / 2,
             y: mapHeight / 2,
@@ -321,6 +330,15 @@
         
         shootBtn.addEventListener('touchend', () => {
             shootBtn.style.background = 'rgba(255, 68, 68, 0.6)';
+        });
+        
+        canvas.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            shoot();
+        });
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            shoot();
         });
         
         function startGame(mode) {
@@ -585,16 +603,8 @@
                 }
                 if (keys['a'] || keys['arrowleft']) player.angle -= player.rotationSpeed;
                 if (keys['d'] || keys['arrowright']) player.angle += player.rotationSpeed;
+                if (keys['k']) shoot();
             }
-            
-            canvas.addEventListener('mousedown', (e) => {
-                e.preventDefault();
-                shoot();
-            });
-            canvas.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                shoot();
-            });
             
             player.x = Math.max(30, Math.min(mapWidth - 30, player.x));
             player.y = Math.max(30, Math.min(mapHeight - 30, player.y));
@@ -737,11 +747,9 @@
             }
             
             ctx.fillStyle = '#3d6020';
-            for (let i = 0; i < 50; i++) {
-                const rx = Math.random() * mapWidth;
-                const ry = Math.random() * mapHeight;
+            for (const obs of obstacles) {
                 ctx.beginPath();
-                ctx.arc(rx, ry, 20 + Math.random() * 30, 0, Math.PI * 2);
+                ctx.arc(obs.x, obs.y, obs.r, 0, Math.PI * 2);
                 ctx.fill();
             }
             
@@ -799,12 +807,10 @@
             minimapCtx.fillStyle = 'rgba(0, 0, 0, 0.5)';
             minimapCtx.fillRect(0, 0, 120, 120);
             
-            minimapCtx.fillStyle = '#2d5016';
-            for (let i = 0; i < 50; i++) {
-                const rx = Math.random() * mapWidth * scale;
-                const ry = Math.random() * mapHeight * scale;
+            for (const obs of obstacles) {
+                minimapCtx.fillStyle = '#3d6020';
                 minimapCtx.beginPath();
-                minimapCtx.arc(rx, ry, 3, 0, Math.PI * 2);
+                minimapCtx.arc(obs.x * scale, obs.y * scale, obs.r * scale, 0, Math.PI * 2);
                 minimapCtx.fill();
             }
             
